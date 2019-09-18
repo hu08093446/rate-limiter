@@ -5,13 +5,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisServerCommands;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
-/**
- * @author wukaiqiang
- */
+/** @author wukaiqiang */
 public class RateLimiterClient {
 
     private Logger logger = LoggerFactory.getLogger(RateLimiterClient.class);
@@ -20,14 +19,14 @@ public class RateLimiterClient {
 
     private RedisScript<Long> rateLimiterClientLua;
 
-    public RateLimiterClient(StringRedisTemplate stringRedisTemplate, RedisScript<Long> rateLimiterClientLua) {
+    public RateLimiterClient(
+            StringRedisTemplate stringRedisTemplate, RedisScript<Long> rateLimiterClientLua) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.rateLimiterClientLua = rateLimiterClientLua;
     }
 
     /**
-     * 获取令牌，访问redis异常算做成功
-     * 默认的permits为1
+     * 获取令牌，访问redis异常算做成功 默认的permits为1
      *
      * @param context
      * @param key
@@ -38,10 +37,8 @@ public class RateLimiterClient {
         return token.isPass() || token.isAccessRedisFail();
     }
 
-
     /**
-     * 获取{@link Token}
-     * 默认的permits为1
+     * 获取{@link Token} 默认的permits为1
      *
      * @param context
      * @param key
@@ -62,13 +59,17 @@ public class RateLimiterClient {
     public Token acquireToken(String context, String key, Integer permits) {
         Token token;
         try {
-            Long currMillSecond = stringRedisTemplate.execute(new RedisCallback<Long>() {
-                @Override
-                public Long doInRedis(RedisConnection connection) throws DataAccessException {
-                    return connection.time();
-                }
-            });
-            Long acquire = stringRedisTemplate.execute(rateLimiterClientLua, ImmutableList.of(getKey(key)), RateLimiterConstants.RATE_LIMITER_ACQUIRE_METHOD, permits.toString(), currMillSecond.toString(), context);
+            Long currMillSecond =
+                    stringRedisTemplate.execute(
+                            (RedisCallback<Long>) RedisServerCommands::time);
+            Long acquire =
+                    stringRedisTemplate.execute(
+                            rateLimiterClientLua,
+                            ImmutableList.of(getKey(key)),
+                            RateLimiterConstants.RATE_LIMITER_ACQUIRE_METHOD,
+                            permits.toString(),
+                            currMillSecond.toString(),
+                            context);
 
             if (acquire == 1) {
                 token = Token.PASS;
@@ -88,6 +89,4 @@ public class RateLimiterClient {
     private String getKey(String key) {
         return RateLimiterConstants.RATE_LIMITER_KEY_PREFIX + key;
     }
-
-
 }

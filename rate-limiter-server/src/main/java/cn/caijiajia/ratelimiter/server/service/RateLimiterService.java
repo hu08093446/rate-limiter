@@ -28,46 +28,49 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * @author wukaiqiang
- */
+/** @author wukaiqiang */
 @Slf4j
 @Service
 public class RateLimiterService implements InitializingBean {
 
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    @Autowired private StringRedisTemplate stringRedisTemplate;
 
     @Resource(name = "rateLimiterLua")
     private RedisScript<Integer> rateLimiterLua;
 
-    @Autowired
-    private RateLimiterInfoMapper rateLimiterInfoMapper;
-
+    @Autowired private RateLimiterInfoMapper rateLimiterInfoMapper;
 
     private ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
-
 
     private String getKey(String key) {
         return RateLimiterConstants.RATE_LIMITER_KEY_PREFIX + key;
     }
 
     public List<RateLimiterVo> getRateLimiters(String context) {
-        List<RateLimiterInfo> rateLimiterInfoList = rateLimiterInfoMapper.selectAll()
-                .stream()
-                .filter((rateLimiterInfo) -> Sets.newHashSet(rateLimiterInfo.getApps().split(",")).contains(context))
-                .collect(Collectors.toList());
+        List<RateLimiterInfo> rateLimiterInfoList =
+                rateLimiterInfoMapper
+                        .selectAll()
+                        .stream()
+                        .filter(
+                                (rateLimiterInfo) ->
+                                        Sets.newHashSet(rateLimiterInfo.getApps().split(","))
+                                                .contains(context))
+                        .collect(Collectors.toList());
 
-        List<Object> rateLimiterListFromRedis = stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
-            StringRedisConnection stringRedisConn = (StringRedisConnection) connection;
-            for (RateLimiterInfo rateLimiterInfo : rateLimiterInfoList) {
-                stringRedisConn.hGetAll(getKey(rateLimiterInfo.getName()));
-            }
-            return null;
-        });
+        List<Object> rateLimiterListFromRedis =
+                stringRedisTemplate.executePipelined(
+                        (RedisCallback<Object>)
+                                connection -> {
+                                    StringRedisConnection stringRedisConn =
+                                            (StringRedisConnection) connection;
+                                    for (RateLimiterInfo rateLimiterInfo : rateLimiterInfoList) {
+                                        stringRedisConn.hGetAll(getKey(rateLimiterInfo.getName()));
+                                    }
+                                    return null;
+                                });
 
-
-        List<RateLimiterVo> rateLimiterRespList = Lists.newArrayListWithCapacity(rateLimiterInfoList.size());
+        List<RateLimiterVo> rateLimiterRespList =
+                Lists.newArrayListWithCapacity(rateLimiterInfoList.size());
 
         for (int i = 0; i < rateLimiterListFromRedis.size(); i++) {
             Object object = rateLimiterListFromRedis.get(i);
@@ -76,18 +79,18 @@ public class RateLimiterService implements InitializingBean {
             }
             RateLimiterInfo rateLimiterInfo = rateLimiterInfoList.get(i);
             HashMap<String, String> rateLimiterMap = (HashMap<String, String>) object;
-            rateLimiterRespList.add(RateLimiterVo.builder()
-                    .name(rateLimiterInfo.getName())
-                    .apps(rateLimiterMap.get("apps"))
-                    .maxPermits(Integer.parseInt(rateLimiterMap.get("max_permits")))
-                    .currPermits(Integer.parseInt(rateLimiterMap.get("curr_permits")))
-                    .rate(Integer.parseInt(rateLimiterMap.get("rate")))
-                    .lastPermitTimestamp(rateLimiterMap.get("last_mill_second"))
-                    .build());
+            rateLimiterRespList.add(
+                    RateLimiterVo.builder()
+                            .name(rateLimiterInfo.getName())
+                            .apps(rateLimiterMap.get("apps"))
+                            .maxPermits(Integer.parseInt(rateLimiterMap.get("max_permits")))
+                            .currPermits(Integer.parseInt(rateLimiterMap.get("curr_permits")))
+                            .rate(Integer.parseInt(rateLimiterMap.get("rate")))
+                            .lastPermitTimestamp(rateLimiterMap.get("last_mill_second"))
+                            .build());
         }
         return rateLimiterRespList;
     }
-
 
     public void saveOrUpdateRateLimiter(RateLimiterForm form) {
         RateLimiterInfo rateLimiterInfo = rateLimiterInfoMapper.selectByName(form.getName());
@@ -100,12 +103,16 @@ public class RateLimiterService implements InitializingBean {
             apps = StringUtils.join(contexts, ",");
         }
 
-        rateLimiterInfoMapper.saveOrUpdate(form.getName(), apps, form.getMaxPermits(), form.getRate());
-        stringRedisTemplate.execute(rateLimiterLua,
+        rateLimiterInfoMapper.saveOrUpdate(
+                form.getName(), apps, form.getMaxPermits(), form.getRate());
+        stringRedisTemplate.execute(
+                rateLimiterLua,
                 ImmutableList.of(getKey(form.getName())),
-                RateLimiterConstants.RATE_LIMITER_INIT_METHOD, form.getMaxPermits() + "", form.getRate() + "", apps);
+                RateLimiterConstants.RATE_LIMITER_INIT_METHOD,
+                form.getMaxPermits() + "",
+                form.getRate() + "",
+                apps);
     }
-
 
     public void deleteRateLimiter(String context, String name) {
         RateLimiterInfo rateLimiterInfo = rateLimiterInfoMapper.selectByName(name);
@@ -118,33 +125,46 @@ public class RateLimiterService implements InitializingBean {
                 rateLimiterInfoMapper.deleteByName(name);
 
             } else {
-                rateLimiterInfoMapper.saveOrUpdate(name, StringUtils.join(contexts, ","), rateLimiterInfo.getMaxPermits(), rateLimiterInfo.getRate());
+                rateLimiterInfoMapper.saveOrUpdate(
+                        name,
+                        StringUtils.join(contexts, ","),
+                        rateLimiterInfo.getMaxPermits(),
+                        rateLimiterInfo.getRate());
             }
-            stringRedisTemplate.execute(rateLimiterLua,
+            stringRedisTemplate.execute(
+                    rateLimiterLua,
                     ImmutableList.of(getKey(name)),
-                    RateLimiterConstants.RATE_LIMITER_INIT_METHOD, rateLimiterInfo.getMaxPermits().toString(), rateLimiterInfo.getRate().toString(), StringUtils.join(contexts, ","));
+                    RateLimiterConstants.RATE_LIMITER_INIT_METHOD,
+                    rateLimiterInfo.getMaxPermits().toString(),
+                    rateLimiterInfo.getRate().toString(),
+                    StringUtils.join(contexts, ","));
         }
     }
 
-
     @Override
     public void afterPropertiesSet() throws Exception {
-        executorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    log.info("diff db and redis job start.....");
-                    List<RateLimiterInfo> rateLimiterInfoList = rateLimiterInfoMapper.selectAll();
-                    for (RateLimiterInfo rateLimiterInfo : rateLimiterInfoList) {
-                        stringRedisTemplate.execute(rateLimiterLua,
-                                ImmutableList.of(getKey(rateLimiterInfo.getName())),
-                                RateLimiterConstants.RATE_LIMITER_INIT_METHOD, rateLimiterInfo.getMaxPermits().toString(), rateLimiterInfo.getRate().toString(), rateLimiterInfo.getApps());
+        executorService.scheduleAtFixedRate(
+                () -> {
+                    try {
+                        log.info("diff db and redis job start.....");
+                        List<RateLimiterInfo> rateLimiterInfoList =
+                                rateLimiterInfoMapper.selectAll();
+                        for (RateLimiterInfo rateLimiterInfo : rateLimiterInfoList) {
+                            stringRedisTemplate.execute(
+                                    rateLimiterLua,
+                                    ImmutableList.of(getKey(rateLimiterInfo.getName())),
+                                    RateLimiterConstants.RATE_LIMITER_INIT_METHOD,
+                                    rateLimiterInfo.getMaxPermits().toString(),
+                                    rateLimiterInfo.getRate().toString(),
+                                    rateLimiterInfo.getApps());
+                        }
+                        log.info("diff db and redis job end.....");
+                    } catch (Exception e) {
+                        log.error("diff db and redis error.....", e);
                     }
-                    log.info("diff db and redis job end.....");
-                } catch (Exception e) {
-                    log.error("diff db and redis error.....", e);
-                }
-            }
-        }, 0, 1, TimeUnit.MINUTES);
+                },
+                0,
+                1,
+                TimeUnit.MINUTES);
     }
 }
